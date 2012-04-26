@@ -7,9 +7,16 @@ import com.basho.riak.client.query.functions.{NamedFunction, NamedErlangFunction
 import scala.collection.JavaConverters._
 import com.basho.riak.client.cap.{UnresolvedConflictException, Quorum}
 import com.basho.riak.client.raw._
+import com.basho.riak.client.query.indexes.{BinIndex, IntIndex}
+import com.basho.riak.client.query.{MapReduce, BucketKeyMapReduce, BucketMapReduce}
+import com.basho.riak.pbc.mapreduce.{MapReduceBuilder, JavascriptFunction}
+import com.basho.riak.pbc.{RequestMeta, MapReduceResponseSource}
+
 import query.indexes.{IntValueQuery, BinValueQuery, IndexQuery}
 import query.LinkWalkSpec
-import com.basho.riak.client.query.indexes.{BinIndex, IntIndex}
+
+
+import mapreduce._
 
 /**
  * Created by IntelliJ IDEA.
@@ -187,6 +194,13 @@ class ScaliakBucket(rawClient: RawClient,
       // this is kinda ridiculous
       walkResult.asScala map { _.asScala map { converter.read(_).toOption } filter { _.isDefined } map { _.get } } filterNot { _.isEmpty }
     }
+  }
+  
+  def mapReduce(job: MapReduceJob) = {
+	  val builder = new MapReduceBuilder()
+	  for (phase <- job.phases) {
+	    //phase.
+	  }
   }
 
   def fetchIndexByValue(index: String, value: String): IO[Validation[Throwable,List[String]]] = {

@@ -1,6 +1,7 @@
 package com.stackmob.scaliak
 
 import com.basho.riak.client.raw.http.HTTPClientAdapter
+import com.basho.riak.client.raw.pbc.PBClientAdapter
 
 /**
  * Created by IntelliJ IDEA.
@@ -13,6 +14,12 @@ object Scaliak {
 
   def httpClient(url: String): ScaliakClient = {
     val rawClient = new HTTPClientAdapter(url)
+    new ScaliakClient(rawClient)
+  }
+  
+  def pbClient(url: String): ScaliakClient = {
+    val pbcClient = new com.basho.riak.pbc.RiakClient(url)
+    val rawClient = new PBClientAdapter(pbcClient)
     new ScaliakClient(rawClient)
   }
 

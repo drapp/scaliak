@@ -12,7 +12,7 @@ import effects._ // not necessary unless you want to take advantage of IO monad
  * Time: 2:00 PM 
  */
 
-class SomeDomainObject(val key: String, val value: String)
+case class SomeDomainObject(val key: String, val value: String)
 object SomeDomainObject {
 
   implicit val domainConverter: ScaliakConverter[SomeDomainObject] = ScaliakConverter.newConverter[SomeDomainObject](
