@@ -17,6 +17,7 @@ import com.basho.riak.client.query.indexes.{ RiakIndexes, IntIndex, BinIndex }
 import java.text.SimpleDateFormat
 import java.util.Date
 import org.joda.time._
+import mapreduce._
 
 import scala.collection.JavaConverters._
 
@@ -104,6 +105,8 @@ abstract class DomainObjectWrapper[ObjectType <: DomainObject](val clazz: Class[
       case Failure(es) ⇒ throw es.head
     }
   }
+  
+  def fetch(keys: String*) = bucket.mapReduce(MapReduceJob(MapValuesToJson()), Some(Map(bucket.name -> keys.toSet)))    
 
   def deleteWithKeys(keys: String*) = {
     keys.foreach(key ⇒ delete(key))

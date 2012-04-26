@@ -5,16 +5,18 @@ import Scalaz._
 import effects._
 import com.basho.riak.client.query.functions.{NamedFunction, NamedErlangFunction}
 import scala.collection.JavaConverters._
+import scala.collection.JavaConversions
+
 import com.basho.riak.client.cap.{UnresolvedConflictException, Quorum}
 import com.basho.riak.client.raw._
 import com.basho.riak.client.query.indexes.{BinIndex, IntIndex}
 import com.basho.riak.client.query.{MapReduce, BucketKeyMapReduce, BucketMapReduce}
 import com.basho.riak.pbc.mapreduce.{MapReduceBuilder, JavascriptFunction}
 import com.basho.riak.pbc.{RequestMeta, MapReduceResponseSource}
+import com.basho.riak.pbc.MapReduceResponseSource.readAllResults
 
 import query.indexes.{IntValueQuery, BinValueQuery, IndexQuery}
 import query.LinkWalkSpec
-
 
 import mapreduce._
 
@@ -196,11 +198,20 @@ class ScaliakBucket(rawClient: RawClient,
     }
   }
   
-  def mapReduce(job: MapReduceJob) = {
+  def mapReduce(job: MapReduceJob, riakObjects: Option[Map[String, Set[String]]] = None) = {
 	  val builder = new MapReduceBuilder()
-	  for (phase <- job.phases) {
-	    //phase.
+	  riakObjects.map { objects =>
+	    val javaMap = JavaConversions.mapAsJavaMap(objects).asInstanceOf[java.util.Map[String, java.util.Set[String]]]
+	    builder.setRiakObjects(javaMap)
 	  }
+	  builder.setBucket(name)
+	  for (phase <- job.phases) {
+	    phase match {
+	       case Right(reducePhase) => builder.map(reducePhase.fn, reducePhase.arguments, reducePhase.keep) 
+	       case Left(mapPhase) => builder.map(mapPhase.fn, mapPhase.arguments, mapPhase.keep)
+	    }
+	  }
+	  val results = readAllResults(builder.submit()).pure[IO].unsafePerformIO
   }
 
   def fetchIndexByValue(index: String, value: String): IO[Validation[Throwable,List[String]]] = {

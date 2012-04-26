@@ -13,7 +13,7 @@ import java.util.LinkedList
 
 package object mapreduce {
   
-  type MapReducePhases = NonEmptyList[MapReducePhase]
+  type MapReducePhases = List[Either[MapPhase, ReducePhase]]
   
 //  implicit def linkWalkStepToJLinkWalkStep(lws: LinkWalkStep): JLinkWalkStep = {
 //    new JLinkWalkStep(lws.bucket, lws.tag, lws.accumulate)
