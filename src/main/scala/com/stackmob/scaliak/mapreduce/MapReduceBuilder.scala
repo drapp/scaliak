@@ -36,7 +36,7 @@ object MapReduceBuilder {
     else if (mrJob.intIndex.isDefined) {
       val jobInputs = new JSONObject 
       jobInputs.put("bucket", mrJob.intIndex.get.bucket)
-      jobInputs.put("index", mrJob.intIndex.get.idx)
+      jobInputs.put("index", mrJob.intIndex.get.idx + "_int")
       mrJob.intIndex.get.idv match {
         case Left(int) ⇒ jobInputs.put("key", int)
         case Right(range) ⇒ {
