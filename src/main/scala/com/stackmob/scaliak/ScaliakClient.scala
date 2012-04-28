@@ -45,7 +45,9 @@ class ScaliakClient(rawClient: RawClient) {
       rawClient.updateBucket(name,
         createUpdateBucketProps(allowSiblings, lastWriteWins, nVal, r,w, rw, dw, pr, pw, basicQuorum, notFoundOk)
       ).pure[IO] >>=| fetchAction
-    } else fetchAction
+    } else {
+    	fetchAction
+    }
 
     (for {      
       b <- fullAction
@@ -120,7 +122,9 @@ class ScaliakClient(rawClient: RawClient) {
                                       basicQuorum: BasicQuorumArgument,
                                       notFoundOk: NotFoundOkArgument) = {
     val builder = new BucketPropertiesBuilder
-    List(allowSiblings, lastWriteWins, nVal, r, w, rw, dw, pr, pw, basicQuorum, notFoundOk) foreach { _ addToMeta builder }
+    val alList = List(allowSiblings, lastWriteWins, nVal, r, w, rw, dw, pr, pw, basicQuorum, notFoundOk) 
+    println(alList)
+    alList.foreach { _ addToMeta builder }
     builder.build
   }
 

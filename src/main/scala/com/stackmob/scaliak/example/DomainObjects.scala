@@ -25,7 +25,7 @@ object SomeDomainObject {
 object DomainObjects extends App {
   import SomeDomainObject._ // put the implicits at a higher priority scope
 
-  val client = Scaliak.httpClient("http://localhost:8091/riak")
+  val client = Scaliak.httpClient("http://127.0.0.1:8098/riak")
   client.generateAndSetClientId()
 
   val bucket = client.bucket("scaliak-example").unsafePerformIO match {

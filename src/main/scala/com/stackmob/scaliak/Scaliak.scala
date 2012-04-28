@@ -17,9 +17,8 @@ object Scaliak {
     new ScaliakClient(rawClient)
   }
   
-  def pbClient(url: String): ScaliakClient = {
-    val pbcClient = new com.basho.riak.pbc.RiakClient(url)
-    val rawClient = new PBClientAdapter(pbcClient)
+  def pbClient(host: String, port: Int): ScaliakClient = {
+    val rawClient = new PBClientAdapter(host, port)
     new ScaliakClient(rawClient)
   }
 

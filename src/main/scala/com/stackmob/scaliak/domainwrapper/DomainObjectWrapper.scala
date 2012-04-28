@@ -9,6 +9,7 @@ import com.basho.riak.client.convert._
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.codehaus.jackson.JsonProcessingException;
 import org.codehaus.jackson.map.{ DeserializationConfig, ObjectMapper }
+import com.codahale.jerkson.Json
 
 import com.basho.riak.client.http.util.{ Constants ⇒ RiakConstants }
 import com.basho.riak.client.{ RiakLink, IRiakObject }
@@ -17,7 +18,8 @@ import com.basho.riak.client.query.indexes.{ RiakIndexes, IntIndex, BinIndex }
 import java.text.SimpleDateFormat
 import java.util.Date
 import org.joda.time._
-import mapreduce._
+import com.stackmob.scaliak.mapreduce._
+import com.stackmob.scaliak.mapreduce.MapReduceFunctions._
 
 import scala.collection.JavaConverters._
 
@@ -33,36 +35,40 @@ abstract class DomainObject {
 }
 
 //case class DomainObject(val key: String, val value: String)
-abstract class DomainObjectWrapper[ObjectType <: DomainObject](val clazz: Class[ObjectType], bucketName: Option[String] = None) {
+abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T], val bucketName: Option[String] = None)(implicit mot: Manifest[T]) {
 
   val objectMapper = new ObjectMapper
   objectMapper.registerModule(DefaultScalaModule)
   objectMapper.registerModule(new com.basho.riak.client.convert.RiakJacksonModule());
 
   objectMapper.configure(DeserializationConfig.Feature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-  val defaultDateTimeFormat = new java.text.SimpleDateFormat("yyyy-MM-ddTHH:mm:ssZ")
+  //val defaultDateTimeFormat = org.joda.time.format.DateTimeFormat.forPattern("yyyy-MM-ddTHH:mm:ssZ")
   val localTimeZone = DateTimeZone.getDefault
-  objectMapper.getSerializationConfig().setDateFormat(defaultDateTimeFormat)
-  objectMapper.getDeserializationConfig().setDateFormat(defaultDateTimeFormat)
+  //objectMapper.getSerializationConfig().set .setDateFormat("yyyy-MM-ddTHH:mm:ssZ")
+  //objectMapper.getDeserializationConfig().setDateFormat(defaultDateTimeFormat)
 
-  val usermetaConverter: UsermetaConverter[ObjectType] = new UsermetaConverter[ObjectType]
-  val riakIndexConverter: RiakIndexConverter[ObjectType] = new RiakIndexConverter[ObjectType]
-  val riakLinksConverter: RiakLinksConverter[ObjectType] = new RiakLinksConverter[ObjectType]
+  val usermetaConverter: UsermetaConverter[T] = new UsermetaConverter[T]
+  val riakIndexConverter: RiakIndexConverter[T] = new RiakIndexConverter[T]
+  val riakLinksConverter: RiakLinksConverter[T] = new RiakLinksConverter[T]
 
-  val client = Scaliak.pbClient("http://localhost:8091/riak")
+  val client = Scaliak.httpClient("http://127.0.0.1:8098/riak")
   client.generateAndSetClientId()
 
-  implicit val domainConverter: ScaliakConverter[ObjectType] = ScaliakConverter.newConverter[ObjectType](
+  def fromJson(json: String) = {
+    Json.parse[T](json)
+  }
+
+  implicit val domainConverter: ScaliakConverter[T] = ScaliakConverter.newConverter[T](
     (o: ReadObject) ⇒ {
-      val domObject = objectMapper.readValue(o.stringValue, clazz)
+      val domObject = Json.parse[T](o.stringValue)
       usermetaConverter.populateUsermeta(o.metadata.asJava, domObject)
       riakIndexConverter.populateIndexes(buildIndexes(o.binIndexes, o.intIndexes), domObject)
       riakLinksConverter.populateLinks(((o.links map { _.list map { l ⇒ new RiakLink(l.bucket, l.key, l.tag) } }) | Nil).asJavaCollection, domObject)
       KeyUtil.setKey(domObject, o.key)
       domObject.successNel
     },
-    (o: ObjectType) ⇒ {
-      val value = objectMapper.writeValueAsBytes(o)
+    (o: T) ⇒ {
+      val value = Json.generate(o).getBytes()
       val key = KeyUtil.getKey(o, o.key)
       val indexes = riakIndexConverter.getIndexes(o)
       val links = (riakLinksConverter.getLinks(o).asScala map { l ⇒ l: ScaliakLink }).toList.toNel
@@ -90,7 +96,6 @@ abstract class DomainObjectWrapper[ObjectType <: DomainObject](val clazz: Class[
 
     new RiakIndexes(tempBinIndexes, tempIntIndexes)
   }
-
   // Default to lower case string representation of the class name => UserProfile: userprofile
   val bucket = client.bucket(bucketName.getOrElse(clazz.getSimpleName.toString.toLowerCase)).unsafePerformIO match {
     case Success(b) ⇒ b
@@ -105,14 +110,47 @@ abstract class DomainObjectWrapper[ObjectType <: DomainObject](val clazz: Class[
       case Failure(es) ⇒ throw es.head
     }
   }
-  
-  def fetch(keys: String*) = bucket.mapReduce(MapReduceJob(MapValuesToJson()), Some(Map(bucket.name -> keys.toSet)))    
 
-  def deleteWithKeys(keys: String*) = {
+  def fetchAsJSON(keys: List[String]) = {
+    val mrJob = MapReduceJob(mapReducePhasePipe = MapReducePhasePipe(mapValuesToJson),
+      riakObjects = Some(Map(bucket.name -> keys.toSet)))
+    bucket.mapReduce(mrJob)
+  }
+
+  def fetch(keys: List[String]) = {
+    fetchAsJSON(keys).unsafePerformIO match {
+      case Success(mbFetched) ⇒ {
+        Json.parse[Array[T]](mbFetched)
+      }
+      case Failure(es) ⇒ throw es
+    }
+  }
+
+  def fetchObjectsWithIndexByValueAsJSON(index: String, value: String, sortField: Option[String] = None, sortDESC: Boolean = false) = {
+    val mrJob = sortField.flatMap { field ⇒      
+      Some(MapReduceJob(mapReducePhasePipe = MapReducePhasePipe(mapValuesToJson(false) |- sort(field, sortDESC)),
+        binIndex = Some(BinaryIndex(index, value, bucket.name))))
+    }.getOrElse {
+      MapReduceJob(mapReducePhasePipe = MapReducePhasePipe(mapValuesToJson),
+    		  	   binIndex = Some(BinaryIndex(index, value, bucket.name)))
+    }
+    bucket.mapReduce(mrJob)
+  }
+
+  def fetchObjectsWithIndexByValue(index: String, value: String, sortField: Option[String] = None, sortDESC: Boolean = false) = {
+    fetchObjectsWithIndexByValueAsJSON(index, value, sortField, sortDESC).unsafePerformIO match {
+      case Success(mbFetched) ⇒ {
+        Json.parse[Array[T]](mbFetched)
+      }
+      case Failure(es) ⇒ throw es
+    }
+  }
+
+  def deleteWithKeys(keys: List[String]) = {
     keys.foreach(key ⇒ delete(key))
   }
 
-  def store(domainObject: ObjectType) = {
+  def store(domainObject: T) = {
     bucket.store(domainObject).unsafePerformIO match {
       case Success(mbFetched) ⇒ {
         Unit
@@ -121,7 +159,7 @@ abstract class DomainObjectWrapper[ObjectType <: DomainObject](val clazz: Class[
     }
   }
 
-  def delete(domainObject: ObjectType) = {
+  def delete(domainObject: T) = {
     bucket.delete(domainObject).unsafePerformIO match {
       case Failure(es) ⇒ throw es
     }
@@ -133,7 +171,7 @@ abstract class DomainObjectWrapper[ObjectType <: DomainObject](val clazz: Class[
     }
   }
 
-  def deleteWithCheck(domainObject: ObjectType, checkFunction: ⇒ ObjectType ⇒ Boolean) = {
+  def deleteWithCheck(domainObject: T, checkFunction: ⇒ T ⇒ Boolean) = {
     if (checkFunction(domainObject))
       delete(domainObject)
     else
