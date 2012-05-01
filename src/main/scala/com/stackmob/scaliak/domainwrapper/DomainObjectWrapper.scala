@@ -161,12 +161,18 @@ abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T], val b
 
   def delete(domainObject: T) = {
     bucket.delete(domainObject).unsafePerformIO match {
+      case Success(mbFetched) ⇒ {
+        Unit
+      }
       case Failure(es) ⇒ throw es
     }
   }
 
   def delete(key: String) = {
     bucket.deleteByKey(key).unsafePerformIO match {
+      case Success(mbFetched) ⇒ {
+        Unit
+      }
       case Failure(es) ⇒ throw es
     }
   }

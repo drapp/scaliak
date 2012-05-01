@@ -55,8 +55,7 @@ sealed trait MapReducePhase {
 
   def add(next: MapOrReducePhase): MapReducePhases = add(MutableList[Either[MapPhase, ReducePhase]](next))
   def add(nexts: MapReducePhases): MapReducePhases = {
-    val newPhases = existingPhases |+| nexts
-    newPhases
+    existingPhases |+| nexts
   }
 }
 
