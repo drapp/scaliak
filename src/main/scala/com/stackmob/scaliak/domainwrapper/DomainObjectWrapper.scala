@@ -35,7 +35,7 @@ abstract class DomainObject {
 }
 
 //case class DomainObject(val key: String, val value: String)
-abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T], val bucketName: Option[String] = None)(implicit mot: Manifest[T]) {
+abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T], val bucketName: Option[String] = None, val client: ScaliakClient)(implicit mot: Manifest[T]) {
 
   val objectMapper = new ObjectMapper
   objectMapper.registerModule(DefaultScalaModule)
@@ -50,9 +50,6 @@ abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T], val b
   val usermetaConverter: UsermetaConverter[T] = new UsermetaConverter[T]
   val riakIndexConverter: RiakIndexConverter[T] = new RiakIndexConverter[T]
   val riakLinksConverter: RiakLinksConverter[T] = new RiakLinksConverter[T]
-
-  val client = Scaliak.httpClient("http://127.0.0.1:8098/riak")
-  client.generateAndSetClientId()
 
   def fromJson(json: String) = {
     Json.parse[T](json)

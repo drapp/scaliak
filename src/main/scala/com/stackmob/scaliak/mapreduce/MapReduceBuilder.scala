@@ -87,6 +87,7 @@ object MapReduceBuilder {
     }
     val query = new JSONArray(phases.toArray)
     job.put("query", query)
+    job.put("timeout", mrJob.timeOut)
     // TODO: Add Support for links and time-outs 
     job
   }

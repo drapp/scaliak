@@ -25,7 +25,8 @@ case class MapReduceJob(
   val bucket: Option[String] = None,
   val riakObjects: Option[Map[String, Set[String]]] = None,
   val binIndex: Option[BinaryIndex] = None,
-  val intIndex: Option[IntegerIndex] = None)
+  val intIndex: Option[IntegerIndex] = None,
+  val timeOut: Int = 60000)
 
 sealed trait MapReducePhasePipe {
   val phases: MapReducePhases
