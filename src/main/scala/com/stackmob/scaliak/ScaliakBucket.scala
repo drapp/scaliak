@@ -194,9 +194,23 @@ class ScaliakBucket(rawClient: RawClient,
 
   def mapReduce(job: MapReduceJob) = {
     val jobAsJSON = mapreduce.MapReduceBuilder.toJSON(job)
-    rawClient.mapReduce(generateMapReduceSpec(jobAsJSON.toString)).pure[IO]
+    mapReduceRetrier(generateMapReduceSpec(jobAsJSON.toString), 3).pure[IO]
       .map(_.getResultRaw().success[Throwable])
       .except { _.fail[String].pure[IO] }
+  }
+  
+  private def mapReduceRetrier(spec: MapReduceSpec, attempts: Int): com.basho.riak.client.query.MapReduceResult = {
+    try {
+      rawClient.mapReduce(spec)
+    } catch {
+      case e ⇒ {
+        if (attempts == 0) {
+          throw e
+        } else {
+          mapReduceRetrier(spec, attempts - 1)
+        }
+      }
+    }
   }
 
   def fetchIndexByValue(index: String, value: String): IO[Validation[Throwable, List[String]]] = {
@@ -210,7 +224,7 @@ class ScaliakBucket(rawClient: RawClient,
   private def generateLinkWalkSpec(bucket: String, key: String, steps: LinkWalkSteps) = {
     new LinkWalkSpec(steps, bucket, key)
   }
-  
+
   private def generateMapReduceSpec(mapReduceJSONString: String) = {
     new MapReduceSpec(mapReduceJSONString)
   }
@@ -254,7 +268,6 @@ class ScaliakBucket(rawClient: RawClient,
     } yield deleteMetaBuilder.vclock(vClock)
     (mbPrepared | deleteMetaBuilder).build
   }
-
 }
 
 trait ScaliakConverter[T] {
