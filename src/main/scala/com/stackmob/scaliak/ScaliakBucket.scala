@@ -207,34 +207,6 @@ class ScaliakBucket(rawClient: RawClient,
       .except { _.fail[String].pure[IO] }
   }
 
-  private def retrier[T](f: ⇒ IO[ValidationNEL[Throwable, Option[T]]], attempts: Int = 3): IO[ValidationNEL[Throwable, Option[T]]] = {
-    try {
-      f
-    } catch {
-      case e ⇒ {
-        if (attempts == 0) {
-          throw e
-        } else {
-          retrier(f, attempts - 1)
-        }
-      }
-    }
-  }
-
-  private def mapReduceRetrier(spec: MapReduceSpec, attempts: Int): com.basho.riak.client.query.MapReduceResult = {
-    try {
-      rawClient.mapReduce(spec)
-    } catch {
-      case e ⇒ {
-        if (attempts == 0) {
-          throw e
-        } else {
-          mapReduceRetrier(spec, attempts - 1)
-        }
-      }
-    }
-  }
-
   def fetchIndexByValue(index: String, value: String): IO[Validation[Throwable, List[String]]] = {
     fetchValueIndex(new BinValueQuery(BinIndex.named(index), name, value))
   }
@@ -268,7 +240,9 @@ class ScaliakBucket(rawClient: RawClient,
                        ifModified: IfModifiedVClockArgument = IfModifiedVClockArgument()) = {
     val fetchMetaBuilder = new FetchMeta.Builder()
     List(r, pr, notFoundOk, basicQuorum, returnDeletedVClock, ifModifiedSince, ifModified) foreach { _ addToMeta fetchMetaBuilder }
-    rawClient.fetch(name, key, fetchMetaBuilder.build).pure[IO]
+    rawRetrier {
+      rawClient.fetch(name, key, fetchMetaBuilder.build).pure[IO]
+    }
   }
 
   private def riakResponseToResult[T](r: RiakResponse)(implicit converter: ScaliakConverter[T], resolver: ScaliakResolver[T]): ValidationNEL[Throwable, Option[T]] = {
@@ -289,6 +263,48 @@ class ScaliakBucket(rawClient: RawClient,
       vClock ← Option(response.getVclock)
     } yield deleteMetaBuilder.vclock(vClock)
     (mbPrepared | deleteMetaBuilder).build
+  }
+  
+  private def rawRetrier[T](f: ⇒  IO[com.basho.riak.client.raw.RiakResponse], attempts: Int = 3): IO[com.basho.riak.client.raw.RiakResponse] = {
+    try {
+      f
+    } catch {
+      case e ⇒ {
+        if (attempts == 0) {
+          throw e
+        } else {
+          rawRetrier(f, attempts - 1)
+        }
+      }
+    }
+  }
+  
+  private def retrier[T](f: ⇒ IO[ValidationNEL[Throwable, Option[T]]], attempts: Int = 3): IO[ValidationNEL[Throwable, Option[T]]] = {
+    try {
+      f
+    } catch {
+      case e ⇒ {
+        if (attempts == 0) {
+          throw e
+        } else {
+          retrier(f, attempts - 1)
+        }
+      }
+    }
+  }
+
+  private def mapReduceRetrier(spec: MapReduceSpec, attempts: Int): com.basho.riak.client.query.MapReduceResult = {
+    try {
+      rawClient.mapReduce(spec)
+    } catch {
+      case e ⇒ {
+        if (attempts == 0) {
+          throw e
+        } else {
+          mapReduceRetrier(spec, attempts - 1)
+        }
+      }
+    }
   }
 }
 
