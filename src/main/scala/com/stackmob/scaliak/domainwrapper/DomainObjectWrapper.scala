@@ -109,7 +109,7 @@ abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T], val b
   }
 
   def fetchAsJSON(keys: List[String]) = {
-    val mrJob = MapReduceJob(mapReducePhasePipe = MapReducePhasePipe(filterNotFound |* mapValuesToJson),
+    val mrJob = MapReduceJob(mapReducePhasePipe = MapReducePhasePipe(mapValuesToJson |- filterNotFound),
       riakObjects = Some(Map(bucket.name -> keys.toSet)))
     bucket.mapReduce(mrJob)
   }
