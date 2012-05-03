@@ -6,6 +6,9 @@ object MapReduceFunctions {
 	def mapValuesToJson(keep: Boolean = true) = MapPhase(named("Riak.mapValuesJson"), keep)
 	def mapValuesToJson:MapPhase = mapValuesToJson(true)
 	
+	def reduceIdentity(keep: Boolean = true) = ReducePhase(named("Riak.reduceIdentity"), keep)
+	def reduceIdentity:ReducePhase = reduceIdentity(true)
+	
 	def sort(field: String, sortDESC: Boolean = false, keep: Boolean = true) = ReducePhase(anon(""" 
 	function(values) {
 	 
