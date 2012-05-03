@@ -67,7 +67,9 @@ class ScaliakBucket(rawClient: RawClient,
                returnDeletedVClock: ReturnDeletedVCLockArgument = ReturnDeletedVCLockArgument(),
                ifModifiedSince: IfModifiedSinceArgument = IfModifiedSinceArgument(),
                ifModified: IfModifiedVClockArgument = IfModifiedVClockArgument())(implicit converter: ScaliakConverter[T], resolver: ScaliakResolver[T]): IO[ValidationNEL[Throwable, Option[T]]] = {
-    fetchDangerous(key, r, pr, notFoundOk, basicQuorum, returnDeletedVClock, ifModifiedSince, ifModified) except { _.failNel.pure[IO] }
+    retrier[T] {
+      fetchDangerous(key, r, pr, notFoundOk, basicQuorum, returnDeletedVClock, ifModifiedSince, ifModified) except { _.failNel.pure[IO] }
+    }
   }
 
   /*
@@ -83,8 +85,10 @@ class ScaliakBucket(rawClient: RawClient,
                         returnDeletedVClock: ReturnDeletedVCLockArgument = ReturnDeletedVCLockArgument(),
                         ifModifiedSince: IfModifiedSinceArgument = IfModifiedSinceArgument(),
                         ifModified: IfModifiedVClockArgument = IfModifiedVClockArgument())(implicit converter: ScaliakConverter[T], resolver: ScaliakResolver[T]): IO[ValidationNEL[Throwable, Option[T]]] = {
-    rawFetch(key, r, pr, notFoundOk, basicQuorum, returnDeletedVClock, ifModifiedSince, ifModified) map {
-      riakResponseToResult(_)
+    retrier[T] {
+	    rawFetch(key, r, pr, notFoundOk, basicQuorum, returnDeletedVClock, ifModifiedSince, ifModified) map {
+	      riakResponseToResult(_)
+	    }
     }
   }
 
@@ -125,22 +129,24 @@ class ScaliakBucket(rawClient: RawClient,
     // can also make it part of the scaliak converter interface
     // and remove it from WriteObject
     val key = converter.write(obj)._key
-    (for {
-      resp ← rawFetch(key, r, pr, notFoundOk, basicQuorum, returnDeletedVClock)
-      fetchRes ← riakResponseToResult(resp).pure[IO]
-    } yield {
-      fetchRes flatMap {
-        mbFetched ⇒
-          {
-            val objToStore = converter.write(mutator(mbFetched, obj)).asRiak(name, resp.getVclock)
-            val storeMeta = prepareStoreMeta(w, pw, dw, returnBody)
-            if (ifNoneMatch) storeMeta.etags(Array(objToStore.getVtag))
-            if (ifNotModified) storeMeta.lastModified(objToStore.getLastModified)
-
-            riakResponseToResult(rawClient.store(objToStore, storeMeta))
-          }
-      }
-    }) except { t ⇒ t.failNel.pure[IO] }
+    retrier[T] {
+	    (for {
+	      resp ← rawFetch(key, r, pr, notFoundOk, basicQuorum, returnDeletedVClock)
+	      fetchRes ← riakResponseToResult(resp).pure[IO]
+	    } yield {
+	      fetchRes flatMap {
+	        mbFetched ⇒
+	          {
+	            val objToStore = converter.write(mutator(mbFetched, obj)).asRiak(name, resp.getVclock)
+	            val storeMeta = prepareStoreMeta(w, pw, dw, returnBody)
+	            if (ifNoneMatch) storeMeta.etags(Array(objToStore.getVtag))
+	            if (ifNotModified) storeMeta.lastModified(objToStore.getLastModified)
+	
+	            riakResponseToResult(rawClient.store(objToStore, storeMeta))
+	          }
+	      }
+	    }) except { t ⇒ t.failNel.pure[IO] }
+    }
   }
 
   /*
@@ -153,10 +159,12 @@ class ScaliakBucket(rawClient: RawClient,
              pw: PWArgument = PWArgument(),
              dw: DWArgument = DWArgument(),
              returnBody: ReturnBodyArgument = ReturnBodyArgument())(implicit converter: ScaliakConverter[T], resolver: ScaliakResolver[T]): IO[ValidationNEL[Throwable, Option[T]]] = {
-    rawClient.store(converter.write(obj).asRiak(name, null), prepareStoreMeta(w, pw, dw, returnBody)).pure[IO] map {
-      riakResponseToResult(_)
-    } except {
-      _.failNel.pure[IO]
+    retrier[T] {
+      rawClient.store(converter.write(obj).asRiak(name, null), prepareStoreMeta(w, pw, dw, returnBody)).pure[IO] map {
+        riakResponseToResult(_)
+      } except {
+        _.failNel.pure[IO]
+      }
     }
   }
 
@@ -198,7 +206,21 @@ class ScaliakBucket(rawClient: RawClient,
       .map(_.getResultRaw().success[Throwable])
       .except { _.fail[String].pure[IO] }
   }
-  
+
+  private def retrier[T](f: ⇒ IO[ValidationNEL[Throwable, Option[T]]], attempts: Int = 3): IO[ValidationNEL[Throwable, Option[T]]] = {
+    try {
+      f
+    } catch {
+      case e ⇒ {
+        if (attempts == 0) {
+          throw e
+        } else {
+          retrier(f, attempts - 1)
+        }
+      }
+    }
+  }
+
   private def mapReduceRetrier(spec: MapReduceSpec, attempts: Int): com.basho.riak.client.query.MapReduceResult = {
     try {
       rawClient.mapReduce(spec)
