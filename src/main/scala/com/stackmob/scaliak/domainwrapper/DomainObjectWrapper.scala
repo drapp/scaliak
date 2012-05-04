@@ -115,11 +115,16 @@ abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T], val b
   }
 
   def fetch(keys: List[String]) = {
-    fetchAsJSON(keys).unsafePerformIO match {
-      case Success(mbFetched) ⇒ {
-        Json.parse[Array[T]](mbFetched)
-      }
-      case Failure(es) ⇒ throw es
+    if (keys.length == 0) {
+    	Array[T]()
+    }
+    else {
+	    fetchAsJSON(keys).unsafePerformIO match {
+	      case Success(mbFetched) ⇒ {
+	        Json.parse[Array[T]](mbFetched)
+	      }
+	      case Failure(es) ⇒ throw es
+	    }
     }
   }
 
