@@ -14,12 +14,14 @@ object Scaliak {
 
   def httpClient(url: String): ScaliakClient = {
     val rawClient = new HTTPClientAdapter(url)
-    new ScaliakClient(rawClient)
+    new ScaliakClient(rawClient, None)
   }
   
-  def pbClient(host: String, port: Int): ScaliakClient = {
+  // PB Client is a lot faster, but we'll still need the HTTP client for getting bucket properties etc.
+  def pbClient(host: String, port: Int, httpPort: Int): ScaliakClient = {
     val rawClient = new PBClientAdapter(host, port)
-    new ScaliakClient(rawClient)
+    val secHTTPClient = new HTTPClientAdapter("http://" + host + ":" + httpPort + "/riak")
+    new ScaliakClient(rawClient, Some(secHTTPClient))
   }
 
 }

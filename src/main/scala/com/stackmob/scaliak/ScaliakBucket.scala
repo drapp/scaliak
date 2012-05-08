@@ -239,7 +239,9 @@ class ScaliakBucket(rawClient: RawClient,
     val fetchMetaBuilder = new FetchMeta.Builder()
     List(r, pr, notFoundOk, basicQuorum, returnDeletedVClock, ifModifiedSince, ifModified) foreach { _ addToMeta fetchMetaBuilder }
 
+    println("STARTING")
     retrier[scalaz.effects.IO[com.basho.riak.client.raw.RiakResponse]] {
+      println("TRY STEP!")
       rawClient.fetch(name, key, fetchMetaBuilder.build).pure[IO]
     }
   }
@@ -270,8 +272,10 @@ class ScaliakBucket(rawClient: RawClient,
     } catch {
       case e ⇒ {
         if (attempts == 0) {
+          println("THROWING!")
           throw e
         } else {
+          println(attempts)
           retrier(f, attempts - 1)
         }
       }

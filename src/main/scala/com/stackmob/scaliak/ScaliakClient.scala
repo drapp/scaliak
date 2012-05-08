@@ -20,7 +20,7 @@ import com.basho.riak.client.builders.BucketPropertiesBuilder
  */
 
 
-class ScaliakClient(rawClient: RawClient) {
+class ScaliakClient(rawClient: RawClient, secHTTPClient: Option[RawClient] = None) {
   
   def listBuckets: IO[Set[String]] = {
     rawClient.listBuckets().pure[IO] map { _.toSet }
@@ -40,9 +40,11 @@ class ScaliakClient(rawClient: RawClient) {
              notFoundOk: NotFoundOkArgument = NotFoundOkArgument()): IO[Validation[Throwable, ScaliakBucket]] = {
     val metaArgs = List(allowSiblings, lastWriteWins, nVal, r, w, rw, dw, pr, pw, basicQuorum, notFoundOk)
     val updateBucket = (metaArgs map { _.value.isDefined }).asMA.sum // update if more one or more arguments is passed in
-    val fetchAction = rawClient.fetchBucket(name).pure[IO]
+    val bucketPropertyClient = if (isPb) secHTTPClient.get else rawClient 
+    
+    val fetchAction = bucketPropertyClient.fetchBucket(name).pure[IO]
     val fullAction = if (updateBucket) {
-      rawClient.updateBucket(name,
+      bucketPropertyClient.updateBucket(name,
         createUpdateBucketProps(allowSiblings, lastWriteWins, nVal, r,w, rw, dw, pr, pw, basicQuorum, notFoundOk)
       ).pure[IO] >>=| fetchAction
     } else {
@@ -63,15 +65,20 @@ class ScaliakClient(rawClient: RawClient) {
 
   // this method causes side effects and may throw
   // exceptions with the PBCAdapter
-  def clientId = Option(rawClient.getClientId)
+  def clientId = Option {
+    val bucketPropertyClient = if (isPb) secHTTPClient.get else rawClient
+    bucketPropertyClient.getClientId 
+  }
 
   def setClientId(id: Array[Byte]) = {
-    rawClient.setClientId(id)
+    val bucketPropertyClient = if (isPb) secHTTPClient.get else rawClient
+    bucketPropertyClient.setClientId(id)
     this
   }
 
   def generateAndSetClientId(): Array[Byte] = {
-    rawClient.generateAndSetClientId()
+    val bucketPropertyClient = if (isPb) secHTTPClient.get else rawClient
+    bucketPropertyClient.generateAndSetClientId()
   }
 
   def transport = rawClient.getTransport
