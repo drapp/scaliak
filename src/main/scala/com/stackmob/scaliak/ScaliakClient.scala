@@ -98,7 +98,7 @@ class ScaliakClient(rawClient: RawClient, secHTTPClient: Option[RawClient] = Non
     val precommits = Option(b.getPrecommitHooks).cata(_.toArray.toSeq, Nil) map { _.asInstanceOf[NamedFunction] }
     val postcommits = Option(b.getPostcommitHooks).cata(_.toArray.toSeq, Nil) map { _.asInstanceOf[NamedErlangFunction] }
     new ScaliakBucket(
-      rawClient = rawClient,
+      rawClientOrClientPool = Left(rawClient),
       name = name,
       allowSiblings = b.getAllowSiblings,
       lastWriteWins = b.getLastWriteWins,

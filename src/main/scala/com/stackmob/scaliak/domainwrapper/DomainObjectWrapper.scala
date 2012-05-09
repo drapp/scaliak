@@ -35,10 +35,9 @@ abstract class DomainObject {
 }
 
 //case class DomainObject(val key: String, val value: String)
-abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T], 
-													  val proposedBucketName: Option[String] = None, 
-													  val clientPool: ScaliakPbClientPool = new ScaliakPbClientPool("127.0.0.1", 8087, 8098))
-													  (implicit mot: Manifest[T]) {
+abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T],
+                                                      val proposedBucketName: Option[String] = None,
+                                                      val clientPool: ScaliakPbClientPool = new ScaliakPbClientPool("127.0.0.1", 8087, 8098))(implicit mot: Manifest[T]) {
 
   val objectMapper = new ObjectMapper
   objectMapper.registerModule(DefaultScalaModule)
@@ -96,19 +95,19 @@ abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T],
 
     new RiakIndexes(tempBinIndexes, tempIntIndexes)
   }
-  
+
   // Default to lower case string representation of the class name => UserProfile: userprofile
-  def bucketName = proposedBucketName.getOrElse(clazz.getSimpleName.toString.toLowerCase)
-  
+  val bucket = clientPool.bucket(proposedBucketName.getOrElse(clazz.getSimpleName.toString.toLowerCase)).unsafePerformIO match {
+    case Success(b) ⇒ b
+    case Failure(e) ⇒ throw e
+  }
 
   def fetch(key: String) = {
-    clientPool.withClient { implicit client => 
-    	client.bucket(bucketName).fetch(key).unsafePerformIO match {
-    		case Success(mbFetched) ⇒ {
-    			mbFetched
-    		}
-    		case Failure(es) ⇒ throw es.head
-    	}
+    bucket.fetch(key).unsafePerformIO match {
+      case Success(mbFetched) ⇒ {
+        mbFetched
+      }
+      case Failure(es) ⇒ throw es.head
     }
   }
 
@@ -120,25 +119,24 @@ abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T],
 
   def fetch(keys: List[String]) = {
     if (keys.length == 0) {
-    	Array[T]()
-    }
-    else {
-	    fetchAsJSON(keys).unsafePerformIO match {
-	      case Success(mbFetched) ⇒ {
-	        Json.parse[Array[T]](mbFetched)
-	      }
-	      case Failure(es) ⇒ throw es
-	    }
+      Array[T]()
+    } else {
+      fetchAsJSON(keys).unsafePerformIO match {
+        case Success(mbFetched) ⇒ {
+          Json.parse[Array[T]](mbFetched)
+        }
+        case Failure(es) ⇒ throw es
+      }
     }
   }
 
   def fetchObjectsWithIndexByValueAsJSON(index: String, value: String, sortField: Option[String] = None, sortDESC: Boolean = false) = {
-    val mrJob = sortField.flatMap { field ⇒      
+    val mrJob = sortField.flatMap { field ⇒
       Some(MapReduceJob(mapReducePhasePipe = MapReducePhasePipe(mapValuesToJson(false) |- sort(field, sortDESC)),
         binIndex = Some(BinaryIndex(index, value, bucket.name))))
     }.getOrElse {
       MapReduceJob(mapReducePhasePipe = MapReducePhasePipe(mapValuesToJson),
-    		  	   binIndex = Some(BinaryIndex(index, value, bucket.name)))
+        binIndex = Some(BinaryIndex(index, value, bucket.name)))
     }
     bucket.mapReduce(mrJob)
   }

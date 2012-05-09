@@ -190,17 +190,22 @@ class ScaliakBucket(rawClientOrClientPool: Either[RawClient, ScaliakClientPool],
     val emptyFetchMeta = new FetchMeta.Builder().build()
     val mbFetchHead = {
       if (fetchBefore) {
-        val resp = rawClientOrClientPool match {
+        rawClientOrClientPool match {
           case Left(client) ⇒ client.head(name, key, emptyFetchMeta).pure[Option].pure[IO]
           case Right(pool)  ⇒ pool.withClient[RiakResponse](_.head(name, key, emptyFetchMeta)).pure[Option].pure[IO]
         }
-        resp
       } else none.pure[IO]
     }
+
     val result = (for {
       mbHeadResponse ← mbFetchHead
       deleteMeta ← retrier[IO[com.basho.riak.client.raw.DeleteMeta]](prepareDeleteMeta(mbHeadResponse, deleteMetaBuilder).pure[IO])
-      _ ← rawClient.delete(name, key, deleteMeta).pure[IO]
+      _ ← {
+        rawClientOrClientPool match {
+          case Left(client) ⇒ client.delete(name, key, deleteMeta).pure[IO]
+          case Right(pool)  ⇒ pool.withClient[Unit](_.delete(name, key, deleteMeta)).pure[IO]
+        }
+      }
     } yield ().success[Throwable])
     result except { t ⇒ t.fail[Unit].pure[IO] }
   }
@@ -209,7 +214,12 @@ class ScaliakBucket(rawClientOrClientPool: Either[RawClient, ScaliakClientPool],
   // This method discards any objects that have conversion errors
   def linkWalk[T](obj: ReadObject, steps: LinkWalkSteps)(implicit converter: ScaliakConverter[T]): IO[Iterable[Iterable[T]]] = {
     for {
-      walkResult ← rawClient.linkWalk(generateLinkWalkSpec(name, obj.key, steps)).pure[IO]
+      walkResult ← {
+        rawClientOrClientPool match {
+          case Left(client) ⇒ client.linkWalk(generateLinkWalkSpec(name, obj.key, steps)).pure[IO]
+          case Right(pool)  ⇒ pool.withClient[com.basho.riak.client.query.WalkResult](_.linkWalk(generateLinkWalkSpec(name, obj.key, steps))).pure[IO]
+        }
+      }
     } yield {
       // this is kinda ridiculous
       walkResult.asScala map { _.asScala map { converter.read(_).toOption } filter { _.isDefined } map { _.get } } filterNot { _.isEmpty }
@@ -240,10 +250,10 @@ class ScaliakBucket(rawClientOrClientPool: Either[RawClient, ScaliakClientPool],
   }
 
   private def fetchValueIndex(query: IndexQuery): IO[Validation[Throwable, List[String]]] = {
-    rawClient.fetchIndex(query)
-      .pure[IO]
-      .map(_.asScala.toList.success[Throwable])
-      .except { _.fail[List[String]].pure[IO] }
+    rawClientOrClientPool match {
+      case Left(client) ⇒ client.fetchIndex(query).pure[IO].map(_.asScala.toList.success[Throwable]).except { _.fail[List[String]].pure[IO] }
+      case Right(pool)  ⇒ pool.withClient[java.util.List[java.lang.String]](_.fetchIndex(query)).pure[IO].map(_.asScala.toList.success[Throwable]).except { _.fail[List[String]].pure[IO] }
+    }
   }
 
   private def rawFetch(key: String,
@@ -291,10 +301,8 @@ class ScaliakBucket(rawClientOrClientPool: Either[RawClient, ScaliakClientPool],
     } catch {
       case e ⇒ {
         if (attempts == 0) {
-          println("THROWING!")
           throw e
         } else {
-          println(attempts)
           retrier(f, attempts - 1)
         }
       }
@@ -303,7 +311,10 @@ class ScaliakBucket(rawClientOrClientPool: Either[RawClient, ScaliakClientPool],
 
   private def mapReduceRetrier(spec: MapReduceSpec, attempts: Int): com.basho.riak.client.query.MapReduceResult = {
     try {
-      rawClient.mapReduce(spec)
+      rawClientOrClientPool match {
+      	case Left(client) ⇒ client.mapReduce(spec)
+      	case Right(pool)  ⇒ pool.withClient[com.basho.riak.client.query.MapReduceResult](_.mapReduce(spec))
+      }
     } catch {
       case e ⇒ {
         if (attempts == 0) {

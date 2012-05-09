@@ -74,7 +74,7 @@ class ScaliakPbClientPool(host: String, port: Int, httpPort: Int) extends Scalia
              pr: PRArgument = PRArgument(),
              pw: PWArgument = PWArgument(),
              basicQuorum: BasicQuorumArgument = BasicQuorumArgument(),
-             notFoundOk: NotFoundOkArgument = NotFoundOkArgument()): IO[Validation[Throwable, ScaliakPooledBucket]] = {
+             notFoundOk: NotFoundOkArgument = NotFoundOkArgument()): IO[Validation[Throwable, ScaliakBucket]] = {
     val metaArgs = List(allowSiblings, lastWriteWins, nVal, r, w, rw, dw, pr, pw, basicQuorum, notFoundOk)
     val updateBucket = (metaArgs map { _.value.isDefined }).asMA.sum // update if more one or more arguments is passed in
 
@@ -101,8 +101,8 @@ class ScaliakPbClientPool(host: String, port: Int, httpPort: Int) extends Scalia
   private def buildBucket(b: BucketProperties, name: String) = {
     val precommits = Option(b.getPrecommitHooks).cata(_.toArray.toSeq, Nil) map { _.asInstanceOf[NamedFunction] }
     val postcommits = Option(b.getPostcommitHooks).cata(_.toArray.toSeq, Nil) map { _.asInstanceOf[NamedErlangFunction] }
-    new ScaliakPooledBucket(
-      clientPool = this,
+    new ScaliakBucket(
+      rawClientOrClientPool = Right(this),
       name = name,
       allowSiblings = b.getAllowSiblings,
       lastWriteWins = b.getLastWriteWins,
