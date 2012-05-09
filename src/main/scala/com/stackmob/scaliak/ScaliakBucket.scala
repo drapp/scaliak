@@ -28,7 +28,7 @@ import mapreduce._
  * Time: 10:37 PM
  */
 
-class ScaliakBucket(rawClient: RawClient,
+class ScaliakBucket(rawClientOrClientPool: Either[RawClient, ScaliakClientPool],
                     val name: String,
                     val allowSiblings: Boolean,
                     val lastWriteWins: Boolean,
@@ -139,7 +139,14 @@ class ScaliakBucket(rawClient: RawClient,
             if (ifNoneMatch) storeMeta.etags(Array(objToStore.getVtag))
             if (ifNotModified) storeMeta.lastModified(objToStore.getLastModified)
 
-            riakResponseToResult(retrier[com.basho.riak.client.raw.RiakResponse](rawClient.store(objToStore, storeMeta)))
+            riakResponseToResult {
+              retrier[com.basho.riak.client.raw.RiakResponse] {
+                rawClientOrClientPool match {
+                  case Left(client) ⇒ client.store(objToStore, storeMeta)
+                  case Right(pool)  ⇒ pool.withClient[RiakResponse](_.store(objToStore, storeMeta))
+                }
+              }
+            }
           }
       }
     }) except { t ⇒ t.failNel.pure[IO] }
@@ -156,7 +163,10 @@ class ScaliakBucket(rawClient: RawClient,
              dw: DWArgument = DWArgument(),
              returnBody: ReturnBodyArgument = ReturnBodyArgument())(implicit converter: ScaliakConverter[T], resolver: ScaliakResolver[T]): IO[ValidationNEL[Throwable, Option[T]]] = {
     retrier[scalaz.effects.IO[com.basho.riak.client.raw.RiakResponse]] {
-      rawClient.store(converter.write(obj).asRiak(name, null), prepareStoreMeta(w, pw, dw, returnBody)).pure[IO]
+      rawClientOrClientPool match {
+        case Left(client) ⇒ client.store(converter.write(obj).asRiak(name, null), prepareStoreMeta(w, pw, dw, returnBody)).pure[IO]
+        case Right(pool)  ⇒ pool.withClient[RiakResponse](_.store(converter.write(obj).asRiak(name, null), prepareStoreMeta(w, pw, dw, returnBody))).pure[IO]
+      }
     } map {
       riakResponseToResult(_)
     } except {
@@ -178,7 +188,15 @@ class ScaliakBucket(rawClient: RawClient,
   def deleteByKey(key: String, fetchBefore: Boolean = false): IO[Validation[Throwable, Unit]] = {
     val deleteMetaBuilder = new DeleteMeta.Builder()
     val emptyFetchMeta = new FetchMeta.Builder().build()
-    val mbFetchHead = if (fetchBefore) rawClient.head(name, key, emptyFetchMeta).pure[Option].pure[IO] else none.pure[IO]
+    val mbFetchHead = {
+      if (fetchBefore) {
+        val resp = rawClientOrClientPool match {
+          case Left(client) ⇒ client.head(name, key, emptyFetchMeta).pure[Option].pure[IO]
+          case Right(pool)  ⇒ pool.withClient[RiakResponse](_.head(name, key, emptyFetchMeta)).pure[Option].pure[IO]
+        }
+        resp
+      } else none.pure[IO]
+    }
     val result = (for {
       mbHeadResponse ← mbFetchHead
       deleteMeta ← retrier[IO[com.basho.riak.client.raw.DeleteMeta]](prepareDeleteMeta(mbHeadResponse, deleteMetaBuilder).pure[IO])
@@ -239,10 +257,11 @@ class ScaliakBucket(rawClient: RawClient,
     val fetchMetaBuilder = new FetchMeta.Builder()
     List(r, pr, notFoundOk, basicQuorum, returnDeletedVClock, ifModifiedSince, ifModified) foreach { _ addToMeta fetchMetaBuilder }
 
-    println("STARTING")
     retrier[scalaz.effects.IO[com.basho.riak.client.raw.RiakResponse]] {
-      println("TRY STEP!")
-      rawClient.fetch(name, key, fetchMetaBuilder.build).pure[IO]
+      rawClientOrClientPool match {
+        case Left(client) ⇒ client.fetch(name, key, fetchMetaBuilder.build).pure[IO]
+        case Right(pool)  ⇒ pool.withClient[RiakResponse](_.fetch(name, key, fetchMetaBuilder.build)).pure[IO]
+      }
     }
   }
 
