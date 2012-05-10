@@ -37,7 +37,7 @@ abstract class DomainObject {
 //case class DomainObject(val key: String, val value: String)
 abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T],
                                                       val proposedBucketName: Option[String] = None,
-                                                      val clientPool: ScaliakPbClientPool = new ScaliakPbClientPool("127.0.0.1", 8087, 8098))(implicit mot: Manifest[T]) {
+                                                      val clientPool: ScaliakPbClientPool)(implicit mot: Manifest[T]) {
 
   val objectMapper = new ObjectMapper
   objectMapper.registerModule(DefaultScalaModule)

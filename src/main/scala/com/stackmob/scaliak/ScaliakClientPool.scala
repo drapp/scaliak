@@ -36,7 +36,7 @@ private class ScaliakPbClientFactory(host: String, port: Int) extends PoolableOb
   def passivateObject(sc: Object): Unit = {} 
   def validateObject(sc: Object) = {
     try {
-      sc.asInstanceOf[RawClient].ping
+      //sc.asInstanceOf[RawClient].ping
       true
     }
     catch {
