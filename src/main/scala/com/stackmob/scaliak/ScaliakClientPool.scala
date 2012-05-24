@@ -141,7 +141,6 @@ class ScaliakPbClientPool(host: String, port: Int, httpPort: Int) extends Scalia
                                       notFoundOk: NotFoundOkArgument) = {
     val builder = new BucketPropertiesBuilder
     val alList = List(allowSiblings, lastWriteWins, nVal, r, w, rw, dw, pr, pw, basicQuorum, notFoundOk)
-    println(alList)
     alList.foreach { _ addToMeta builder }
     builder.build
   }
