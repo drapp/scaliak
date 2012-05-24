@@ -3,32 +3,19 @@ package domainwrapper
 
 import scalaz._
 import Scalaz._
-import effects._ // not necessary unless you want to take advantage of IO monad
+
+// not necessary unless you want to take advantage of IO monad
+
 import com.basho.riak.client.convert._
 
-import com.fasterxml.jackson.module.scala.DefaultScalaModule
-import org.codehaus.jackson.JsonProcessingException;
-import org.codehaus.jackson.map.{ DeserializationConfig, ObjectMapper }
-import com.codahale.jerkson.Json
-
-import com.basho.riak.client.http.util.{ Constants ⇒ RiakConstants }
-import com.basho.riak.client.{ RiakLink, IRiakObject }
-import com.basho.riak.client.query.indexes.{ RiakIndexes, IntIndex, BinIndex }
-
-import java.text.SimpleDateFormat
-import java.util.Date
-import org.joda.time._
+import com.basho.riak.client.RiakLink
+import com.basho.riak.client.query.indexes.{RiakIndexes, IntIndex, BinIndex}
 import com.stackmob.scaliak.mapreduce._
 import com.stackmob.scaliak.mapreduce.MapReduceFunctions._
 
 import scala.collection.JavaConverters._
 
-/**
- * Created by IntelliJ IDEA.
- * User: jordanrw
- * Date: 12/16/11
- * Time: 2:00 PM
- */
+import com.codahale.jerkson.Json
 
 abstract class DomainObject {
   def key: String
@@ -38,16 +25,6 @@ abstract class DomainObject {
 abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T],
                                                       val proposedBucketName: Option[String] = None,
                                                       val clientPool: ScaliakPbClientPool)(implicit mot: Manifest[T]) {
-
-  val objectMapper = new ObjectMapper
-  objectMapper.registerModule(DefaultScalaModule)
-  objectMapper.registerModule(new com.basho.riak.client.convert.RiakJacksonModule());
-
-  objectMapper.configure(DeserializationConfig.Feature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-  //val defaultDateTimeFormat = org.joda.time.format.DateTimeFormat.forPattern("yyyy-MM-ddTHH:mm:ssZ")
-  val localTimeZone = DateTimeZone.getDefault
-  //objectMapper.getSerializationConfig().set .setDateFormat("yyyy-MM-ddTHH:mm:ssZ")
-  //objectMapper.getDeserializationConfig().setDateFormat(defaultDateTimeFormat)
 
   val usermetaConverter: UsermetaConverter[T] = new UsermetaConverter[T]
   val riakIndexConverter: RiakIndexConverter[T] = new RiakIndexConverter[T]
@@ -62,7 +39,11 @@ abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T],
       val domObject = Json.parse[T](o.stringValue)
       usermetaConverter.populateUsermeta(o.metadata.asJava, domObject)
       riakIndexConverter.populateIndexes(buildIndexes(o.binIndexes, o.intIndexes), domObject)
-      riakLinksConverter.populateLinks(((o.links map { _.list map { l ⇒ new RiakLink(l.bucket, l.key, l.tag) } }) | Nil).asJavaCollection, domObject)
+      riakLinksConverter.populateLinks(((o.links map {
+        _.list map {
+          l ⇒ new RiakLink(l.bucket, l.key, l.tag)
+        }
+      }) | Nil).asJavaCollection, domObject)
       KeyUtil.setKey(domObject, o.key)
       domObject.successNel
     },
@@ -70,7 +51,9 @@ abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T],
       val value = Json.generate(o).getBytes()
       val key = KeyUtil.getKey(o, o.key)
       val indexes = riakIndexConverter.getIndexes(o)
-      val links = (riakLinksConverter.getLinks(o).asScala map { l ⇒ l: ScaliakLink }).toList.toNel
+      val links = (riakLinksConverter.getLinks(o).asScala map {
+        l ⇒ l: ScaliakLink
+      }).toList.toNel
       val metadata = usermetaConverter.getUsermetaData(o).asScala.toMap
       val binIndexes = indexes.getBinIndexes().asScala.mapValues(_.asScala.toSet).toMap
       val intIndexes = indexes.getIntIndexes().asScala.mapValues(_.asScala.map(_.intValue()).toSet).toMap
@@ -82,12 +65,12 @@ abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T],
   private def buildIndexes(binIndexes: Map[BinIndex, Set[String]], intIndexes: Map[IntIndex, Set[Int]]): RiakIndexes = {
     val tempBinIndexes: java.util.Map[BinIndex, java.util.Set[String]] = new java.util.HashMap[BinIndex, java.util.Set[String]]()
     val tempIntIndexes: java.util.Map[IntIndex, java.util.Set[java.lang.Integer]] = new java.util.HashMap[IntIndex, java.util.Set[java.lang.Integer]]()
-    for { (k, v) ← binIndexes } {
+    for {(k, v) ← binIndexes} {
       val set: java.util.Set[String] = new java.util.HashSet[String]()
       v.foreach(set.add(_))
       tempBinIndexes.put(k, set)
     }
-    for { (k, v) ← intIndexes } {
+    for {(k, v) ← intIndexes} {
       val set: java.util.Set[java.lang.Integer] = new java.util.HashSet[java.lang.Integer]()
       v.foreach(set.add(_))
       tempIntIndexes.put(k, set)
@@ -131,9 +114,10 @@ abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T],
   }
 
   def fetchObjectsWithIndexByValueAsJSON(index: String, value: String, sortField: Option[String] = None, sortDESC: Boolean = false) = {
-    val mrJob = sortField.flatMap { field ⇒
-      Some(MapReduceJob(mapReducePhasePipe = MapReducePhasePipe(mapValuesToJson(false) |- sort(field, sortDESC)),
-        binIndex = Some(BinaryIndex(index, value, bucket.name))))
+    val mrJob = sortField.flatMap {
+      field ⇒
+        Some(MapReduceJob(mapReducePhasePipe = MapReducePhasePipe(mapValuesToJson(false) |- sort(field, sortDESC)),
+          binIndex = Some(BinaryIndex(index, value, bucket.name))))
     }.getOrElse {
       MapReduceJob(mapReducePhasePipe = MapReducePhasePipe(mapValuesToJson),
         binIndex = Some(BinaryIndex(index, value, bucket.name)))
@@ -191,14 +175,14 @@ abstract class DomainObjectWrapper[T <: DomainObject](val clazz: Class[T],
   def fetchKeysForIndexWithValue(idx: String, idv: String) = {
     bucket.fetchIndexByValue(idx, idv).unsafePerformIO match {
       case Success(mbFetched) ⇒ mbFetched
-      case Failure(es)        ⇒ throw es
+      case Failure(es) ⇒ throw es
     }
   }
 
   def fetchKeysForIndexWithValue(idx: String, idv: Int) = {
     bucket.fetchIndexByValue(idx, idv).unsafePerformIO match {
       case Success(mbFetched) ⇒ mbFetched
-      case Failure(es)        ⇒ throw es
+      case Failure(es) ⇒ throw es
     }
   }
 }
